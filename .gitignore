@@ -1,0 +1,9 @@
+data/
+.idea
+bin/
+temp/
+!temp/.gitkeep
+
+.env
+.DS_Store
+.data
