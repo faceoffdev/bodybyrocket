@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/SevereCloud/vksdk/v3/api"
 	"github.com/spf13/cobra"
-	"log"
 	"sync"
 )
 
@@ -45,7 +44,7 @@ func ParseHandler(_ *cobra.Command, _ []string) error {
 		defer wg.Done()
 
 		if err = p.ExportFromGroup(FreeGroupID, true); err != nil {
-			log.Printf("ошибка экспорта из бесплатной группы: %v", err)
+			fmt.Printf("ошибка экспорта из бесплатной группы: %v", err)
 		}
 	}()
 
@@ -53,7 +52,7 @@ func ParseHandler(_ *cobra.Command, _ []string) error {
 		defer wg.Done()
 
 		if err = p.ExportFromGroup(PaidGroupID, false); err != nil {
-			log.Printf("ошибка экспорта из платной группы: %v", err)
+			fmt.Printf("ошибка экспорта из платной группы: %v", err)
 		}
 	}()
 

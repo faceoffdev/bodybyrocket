@@ -8,6 +8,12 @@ type Vk struct {
 	Token NotEmptyString `env:"VK_TOKEN" env-required:"true"`
 }
 
+type Telegram struct {
+	ApiId    string `env:"API_ID"`
+	ApiHash  string `env:"API_HASH"`
+	BotToken string `env:"BOT_TOKEN"`
+}
+
 type Database struct {
 	User   string `env:"DB_USERNAME" env-required:"true"`
 	Pass   string `env:"DB_PASSWORD" env-required:"true"`
@@ -18,6 +24,7 @@ type Database struct {
 
 type Config struct {
 	Vk       Vk
+	Telegram Telegram
 	Database Database
 }
 

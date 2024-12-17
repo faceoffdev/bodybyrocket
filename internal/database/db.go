@@ -3,8 +3,6 @@ package database
 import (
 	"bodybyrocket/internal/config"
 	"fmt"
-	"log"
-
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -31,7 +29,7 @@ func Connect(c config.Database) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	log.Println(version)
+	fmt.Println(version)
 
 	return db, nil
 }

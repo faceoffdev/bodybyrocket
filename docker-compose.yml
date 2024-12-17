@@ -1,0 +1,19 @@
+networks:
+  workspace:
+    name: workspace
+    external: true
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: .docker/Dockerfile
+      target: golang_dev
+    restart: "no"
+    tty: true
+    networks:
+      - workspace
+    ports:
+        - "2346:2346"
+    volumes:
+      - ./:/app

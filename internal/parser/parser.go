@@ -10,19 +10,16 @@ import (
 	"time"
 )
 
-type VkParser struct {
-	client *api.VK
-	db     *gorm.DB
+type Parser struct {
+	vk *api.VK
+	db *gorm.DB
 }
 
-func New(client *api.VK, db *gorm.DB) *VkParser {
-	return &VkParser{
-		client: client,
-		db:     db,
-	}
+func New(vk *api.VK, db *gorm.DB) *Parser {
+	return &Parser{vk, db}
 }
 
-func (vk *VkParser) GetAllPosts(groupId int, yield func(post object.WallWallpost) bool) {
+func (p *Parser) GetAllPosts(groupId int, yield func(post object.WallWallpost) bool) {
 	const maxCountItems = 10
 
 	var (
@@ -32,7 +29,7 @@ func (vk *VkParser) GetAllPosts(groupId int, yield func(post object.WallWallpost
 	)
 
 	for ok := true; ok; ok = offset < wall.Count {
-		wall, err = vk.client.WallGet(api.Params{"owner_id": groupId, "count": maxCountItems, "offset": offset})
+		wall, err = p.vk.WallGet(api.Params{"owner_id": groupId, "count": maxCountItems, "offset": offset})
 		if err != nil {
 			return
 		}
@@ -47,13 +44,13 @@ func (vk *VkParser) GetAllPosts(groupId int, yield func(post object.WallWallpost
 	}
 }
 
-func (vk *VkParser) ExportFromGroup(groupId int, isFree bool) error {
+func (p *Parser) ExportFromGroup(groupId int, isFree bool) error {
 	var posts []database.Post
 
 	last := &database.Post{}
-	vk.db.Where("group_id = ?", groupId).Order("post_id DESC").First(last)
+	p.db.Where("group_id = ?", groupId).Order("post_id DESC").First(last)
 
-	vk.GetAllPosts(groupId, func(wallpost object.WallWallpost) bool {
+	p.GetAllPosts(groupId, func(wallpost object.WallWallpost) bool {
 		if last.PostID == wallpost.ID {
 			return false
 		}
@@ -95,7 +92,7 @@ func (vk *VkParser) ExportFromGroup(groupId int, isFree bool) error {
 		return nil
 	}
 
-	return vk.db.CreateInBatches(posts, 100).Error
+	return p.db.CreateInBatches(posts, 100).Error
 }
 
 func prepareText(text string, isFree bool) string {
