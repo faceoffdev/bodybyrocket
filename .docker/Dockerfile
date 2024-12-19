@@ -68,7 +68,7 @@ RUN apk add --no-cache --update --repository=https://dl-cdn.alpinelinux.org/alpi
     supercronic \
     supervisor
 
-COPY --link rootfs /
+COPY --link .docker/rootfs /
 
 RUN chown -R ${USER}:${USER} /etc/crontabs \
     && chown -R ${USER}:${USER} /etc/supervisor
