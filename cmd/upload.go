@@ -3,11 +3,13 @@ package cmd
 import (
 	"bodybyrocket/internal/config"
 	"bodybyrocket/internal/database"
+	"bodybyrocket/internal/lib"
 	"bodybyrocket/internal/tdlib"
 	"bodybyrocket/internal/uploader"
 	"fmt"
 	"github.com/SevereCloud/vksdk/v3/api"
 	"github.com/spf13/cobra"
+	"os"
 )
 
 const chatId = -1002298937261
@@ -37,6 +39,12 @@ func UploadHandler(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("ошибка подключения к Telegram: %v", err)
 	}
 	defer tg.Shutdown()
+
+	for _, f := range []string{".data", ".data/tdlib", uploader.DataVideoFolder} {
+		if ok, err := lib.IsDirectory(f); !ok || err != nil {
+			os.Mkdir(f, os.ModePerm)
+		}
+	}
 
 	u := uploader.New(api.NewVK(string(cfg.Vk.Token)), tg, db)
 	u.Upload(chatId)

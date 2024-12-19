@@ -10,6 +10,15 @@ import (
 
 const gb = 1024 * 1024 * 1024
 
+func IsDirectory(path string) (bool, error) {
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return false, err
+	}
+
+	return fileInfo.IsDir(), err
+}
+
 func DownloadFile(url, filepath string) (err error) {
 	response, err := http.Get(url)
 	if err != nil {
