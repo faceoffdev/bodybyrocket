@@ -65,6 +65,7 @@ USER root
 
 RUN apk add --no-cache --update --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
     tini \
+    flock \
     supercronic \
     supervisor
 
@@ -75,12 +76,11 @@ RUN chown -R ${USER}:${USER} /etc/crontabs \
 
 USER ${USER}
 
-COPY go.mod go.sum ./
-RUN go mod download
-
-COPY . /app/src
-RUN go build -buildvcs=false -gcflags "all=-N -l" -o /app/bbr /app/src
-RUN rm -rf /app/src
+COPY --chown=${USER}:${USER} . /app/src
+RUN cd /app/src/ \
+    && go mod download \
+    && go build -buildvcs=false -gcflags "all=-N -l" -o /app/bbr . \
+    && rm -rf /app/src
 
 ENTRYPOINT ["/sbin/tini", "--", "/usr/bin/docker-entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
