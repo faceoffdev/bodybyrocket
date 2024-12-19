@@ -61,11 +61,29 @@ COPY --from=tdlib /usr/local/lib/libtd* /usr/local/lib/
 
 FROM golang AS golang_prod
 
+USER root
+
+RUN apk add --no-cache --update --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
+    tini \
+    supercronic \
+    supervisor
+
+COPY --link rootfs /
+
+RUN chown -R ${USER}:${USER} /etc/crontabs \
+    && chown -R ${USER}:${USER} /etc/supervisor
+
+USER ${USER}
+
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY . .
-RUN go build -buildvcs=false -gcflags "all=-N -l" -o /app/bbr .
+COPY . /app/src
+RUN go build -buildvcs=false -gcflags "all=-N -l" -o /app/bbr /app/src
+RUN rm -rf /app/src
+
+ENTRYPOINT ["/sbin/tini", "--", "/usr/bin/docker-entrypoint.sh"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
 
 
 FROM golang AS golang_dev

@@ -1,0 +1,2 @@
+*/10 * * * * /app/bbr parse > /proc/1/fd/1 2>/proc/1/fd/2
+*/5 * * * * flock -n /app/tmp/bbr_upload.lock /app/bbr upload > /proc/1/fd/1 2>/proc/1/fd/2

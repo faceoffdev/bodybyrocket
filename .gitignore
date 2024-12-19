@@ -1,9 +1,10 @@
 data/
 .idea
-bin/
+/bin/
 temp/
 !temp/.gitkeep
 
 .env
 .DS_Store
 .data
+/bbr
