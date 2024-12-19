@@ -103,7 +103,7 @@ func (t *Uploader) download(post database.Post) (*tdlib.VideoLocalFile, error) {
 	}
 
 	previewPath := fmt.Sprintf("%s/%d.jpg", DataVideoFolder, post.ID)
-	previewURL := video.FirstFrame[len(video.FirstFrame)-1].URL
+	previewURL := video.Image[len(video.Image)-1].URL
 	if err = lib.DownloadFile(previewURL, previewPath); err != nil {
 		previewPath = ""
 	}
