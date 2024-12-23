@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 )
 
 const gb = 1024 * 1024 * 1024
@@ -17,6 +18,19 @@ func IsDirectory(path string) (bool, error) {
 	}
 
 	return fileInfo.IsDir(), err
+}
+
+func CheckFileInDirectory(directory, file string) (bool, error) {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return false, err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.Contains(entry.Name(), file) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func DownloadFile(url, filepath string) (err error) {

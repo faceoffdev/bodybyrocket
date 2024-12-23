@@ -8,12 +8,15 @@ import (
 	"fmt"
 	"github.com/SevereCloud/vksdk/v3/api"
 	"gorm.io/gorm"
+	"strconv"
 	"sync"
+	"time"
 )
 
 const (
 	DataVideoFolder = ".data/videos"
 	maxWorkers      = 2
+	uploadTimeout   = 30 * time.Minute
 )
 
 type Uploader struct {
@@ -68,6 +71,30 @@ func (t *Uploader) Upload(chatId int64) {
 
 			if err != nil {
 				fmt.Printf("ошибка загрузки видео %d: %v\n", post.ID, err)
+
+				<-sem
+				return
+			}
+
+			start := time.Now()
+
+			for {
+				if time.Since(start) > uploadTimeout {
+					fmt.Printf("тайм-аут для загрузки видео %d истек\n", post.ID)
+					break
+				}
+
+				hasFile, err := lib.CheckFileInDirectory(DataVideoFolder, strconv.Itoa(post.ID))
+				if err != nil {
+					continue
+				}
+
+				if !hasFile {
+					fmt.Printf("нет видео %d в директории\n", post.ID)
+					break
+				}
+
+				time.Sleep(30 * time.Second)
 			}
 
 			<-sem
