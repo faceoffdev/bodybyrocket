@@ -2,8 +2,8 @@ package parser
 
 import (
 	"bodybyrocket/internal/database"
+	"bodybyrocket/internal/lib"
 	"github.com/SevereCloud/vksdk/v3/api"
-	"github.com/SevereCloud/vksdk/v3/object"
 	"gorm.io/gorm"
 	"regexp"
 	"strings"
@@ -19,62 +19,41 @@ func New(vk *api.VK, db *gorm.DB) *Parser {
 	return &Parser{vk, db}
 }
 
-func (p *Parser) GetAllPosts(groupId int, yield func(post object.WallWallpost) bool) {
-	const maxCountItems = 10
-
-	var (
-		offset int
-		wall   api.WallGetResponse
-		err    error
-	)
-
-	for ok := true; ok; ok = offset < wall.Count {
-		wall, err = p.vk.WallGet(api.Params{"owner_id": groupId, "count": maxCountItems, "offset": offset})
-		if err != nil {
-			return
-		}
-
-		for _, post := range wall.Items {
-			if !yield(post) {
-				return
-			}
-		}
-
-		offset += maxCountItems
-	}
-}
-
 func (p *Parser) ExportFromGroup(groupId int, isFree bool) error {
 	var posts []database.Post
 
 	last := &database.Post{}
 	p.db.Where("group_id = ?", groupId).Order("post_id DESC").First(last)
 
-	p.GetAllPosts(groupId, func(wallpost object.WallWallpost) bool {
+	for wallpost, err := range lib.IterateWallPosts(p.vk, groupId) {
+		if err != nil {
+			return err
+		}
+
 		if last.PostID == wallpost.ID {
-			return false
+			break
 		}
 
 		if wallpost.IsPinned {
-			return true
+			continue
 		}
 
 		if len(wallpost.Attachments) != 1 {
-			return true
+			continue
 		}
 
 		attachment := wallpost.Attachments[0]
 		if attachment.Type != "video" {
-			return true
+			continue
 		}
 
 		if attachment.Video.Duration <= 300 {
-			return true
+			continue
 		}
 
 		text := prepareText(wallpost.Text, isFree)
 		if text == "" {
-			return true
+			continue
 		}
 
 		posts = append(posts, database.Post{
@@ -84,9 +63,7 @@ func (p *Parser) ExportFromGroup(groupId int, isFree bool) error {
 			VideoID:     attachment.Video.ID,
 			Text:        text,
 		})
-
-		return true
-	})
+	}
 
 	if posts == nil {
 		return nil
