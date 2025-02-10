@@ -6,7 +6,6 @@ import (
 	"github.com/SevereCloud/vksdk/v3/api"
 	"gorm.io/gorm"
 	"regexp"
-	"strings"
 	"time"
 )
 
@@ -38,31 +37,28 @@ func (p *Parser) ExportFromGroup(groupId int, isFree bool) error {
 			continue
 		}
 
-		if len(wallpost.Attachments) != 1 {
-			continue
-		}
+		for _, attachment := range wallpost.Attachments {
+			if attachment.Type != "video" {
+				break
+			}
 
-		attachment := wallpost.Attachments[0]
-		if attachment.Type != "video" {
-			continue
-		}
+			if attachment.Video.Duration <= 300 {
+				continue
+			}
 
-		if attachment.Video.Duration <= 300 {
-			continue
-		}
+			text := prepareText(wallpost.Text, isFree)
+			if text == "" {
+				continue
+			}
 
-		text := prepareText(wallpost.Text, isFree)
-		if text == "" {
-			continue
+			posts = append(posts, database.Post{
+				PostID:      wallpost.ID,
+				PublishedAt: time.Unix(int64(wallpost.Date), 0),
+				GroupID:     attachment.Video.OwnerID,
+				VideoID:     attachment.Video.ID,
+				Text:        text,
+			})
 		}
-
-		posts = append(posts, database.Post{
-			PostID:      wallpost.ID,
-			PublishedAt: time.Unix(int64(wallpost.Date), 0),
-			GroupID:     attachment.Video.OwnerID,
-			VideoID:     attachment.Video.ID,
-			Text:        text,
-		})
 	}
 
 	if posts == nil {
@@ -78,15 +74,17 @@ func prepareText(text string, isFree bool) string {
 	}
 
 	// если не находим ключевые фразы, то выходим
-	if !regexp.MustCompile(`длинную тренировку|короткую тренировку|зарядку`).MatchString(text) {
+	if !regexp.MustCompile(`длинную тренировку|короткую тренировку|зарядку|новые тренировки`).MatchString(text) {
 		return ""
 	}
 
 	// интересует только текст до фразы "Ракеты, напоминаю", т.к. дальше однотипный рекламный текст
-	match := strings.Split(text, "\n\n")
-	if len(match) > 0 {
-		return match[0]
-	}
+	re := regexp.MustCompile(`\(\w+\s+весь\s+пост\..*важная\s+памятка.*\)`)
+	text = re.ReplaceAllString(text, "")
 
-	return ""
+	// Регулярка для удаления всех акцентов
+	reAccent := regexp.MustCompile(`Акценты:\s*[\s\S]+?`)
+	text = reAccent.ReplaceAllString(text, "")
+
+	return text
 }
