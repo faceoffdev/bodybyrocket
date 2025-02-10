@@ -79,12 +79,12 @@ func prepareText(text string, isFree bool) string {
 	}
 
 	// Регулярка для удаления фразы "Открой весь пост. В конце поста важная памятка💖"
-	re := regexp.MustCompile(`\(\w+\s+весь\s+пост\..*важная\s+памятка.*\)`)
+	re := regexp.MustCompile(`\(.*весь\s+пост\..*важная\s+памятка.*\)`)
 	text = re.ReplaceAllString(text, "")
 
 	// Регулярка для удаления текста после фразы "После выполнения..."
-	reAccent := regexp.MustCompile(`После выполнения.*`)
-	text = reAccent.ReplaceAllString(text, "")
+	reAccent := regexp.MustCompile(`\s?После выполнения.*`)
+	text = reAccent.Split(text, 2)[0]
 
 	return text
 }
