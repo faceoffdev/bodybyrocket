@@ -19,6 +19,11 @@ const (
 	uploadTimeout   = 30 * time.Minute
 )
 
+const (
+	maxWidth  = 1280
+	maxHeight = 720
+)
+
 type Uploader struct {
 	vk *api.VK
 	tg *tdlib.Telegram
@@ -130,7 +135,14 @@ func (t *Uploader) download(post database.Post) (*tdlib.VideoLocalFile, error) {
 	}
 
 	previewPath := fmt.Sprintf("%s/%d.jpg", DataVideoFolder, post.ID)
-	previewURL := video.Image[len(video.Image)-1].URL
+	previewURL := video.Image[0].URL
+	for i := len(video.Image) - 1; i > 0; i-- {
+		if img := video.Image[i]; img.Width <= maxWidth && img.Height <= maxHeight {
+			previewURL = img.URL
+			break
+		}
+	}
+
 	if err = lib.DownloadFile(previewURL, previewPath); err != nil {
 		previewPath = ""
 	}
@@ -138,7 +150,7 @@ func (t *Uploader) download(post database.Post) (*tdlib.VideoLocalFile, error) {
 	return &tdlib.VideoLocalFile{
 		Path:        filePath,
 		PreviewPath: previewPath,
-		Width:       1280,
-		Height:      720,
+		Width:       maxWidth,
+		Height:      maxHeight,
 	}, nil
 }

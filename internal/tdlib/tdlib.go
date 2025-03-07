@@ -75,12 +75,12 @@ func newTelegramClient(cfg config.Telegram) (*client.Client, error) {
 	return newClient, nil
 }
 
-func (u *Telegram) Shutdown() {
-	u.listener.Close()
-	u.client.Stop()
+func (t *Telegram) Shutdown() {
+	t.listener.Close()
+	t.client.Stop()
 }
 
-func (u *Telegram) SendVideo(chatId int64, file *VideoLocalFile) (*client.Message, error) {
+func (t *Telegram) SendVideo(chatId int64, file *VideoLocalFile) (*client.Message, error) {
 	if file.Path == "" {
 		return nil, fmt.Errorf("filePath is empty")
 	}
@@ -88,7 +88,7 @@ func (u *Telegram) SendVideo(chatId int64, file *VideoLocalFile) (*client.Messag
 		return nil, fmt.Errorf("chatId is empty")
 	}
 
-	chat, err := u.client.GetChat(&client.GetChatRequest{
+	chat, err := t.client.GetChat(&client.GetChatRequest{
 		ChatId: chatId,
 	})
 	if err != nil {
@@ -112,7 +112,7 @@ func (u *Telegram) SendVideo(chatId int64, file *VideoLocalFile) (*client.Messag
 		}
 	}
 
-	msg, err := u.client.SendMessage(&client.SendMessageRequest{
+	msg, err := t.client.SendMessage(&client.SendMessageRequest{
 		ChatId: chat.Id,
 		InputMessageContent: &client.InputMessageVideo{
 			Video:             &client.InputFileLocal{Path: file.Path},
