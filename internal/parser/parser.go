@@ -86,5 +86,9 @@ func prepareText(text string, isFree bool) string {
 	reAccent := regexp.MustCompile(`\s?После выполнения.*`)
 	text = reAccent.Split(text, 2)[0]
 
+	// Регулярка для удаления лишних отступов
+	reNewLines := regexp.MustCompile(`\n+`)
+	text = reNewLines.ReplaceAllString(text, "\n")
+
 	return text
 }
