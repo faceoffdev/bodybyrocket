@@ -2,11 +2,13 @@ package tdlib
 
 import (
 	"bodybyrocket/internal/config"
+	"context"
 	"fmt"
 	"github.com/zelenin/go-tdlib/client"
 	"log"
 	"path/filepath"
 	"strconv"
+	"time"
 )
 
 const (
@@ -15,8 +17,7 @@ const (
 )
 
 type Telegram struct {
-	client   *client.Client
-	listener *client.Listener
+	client *client.Client
 }
 
 func New(cfg config.Telegram) (*Telegram, error) {
@@ -26,8 +27,7 @@ func New(cfg config.Telegram) (*Telegram, error) {
 	}
 
 	u := &Telegram{
-		client:   tdlibClient,
-		listener: NewListener(tdlibClient),
+		client: tdlibClient,
 	}
 
 	return u, nil
@@ -76,11 +76,10 @@ func newTelegramClient(cfg config.Telegram) (*client.Client, error) {
 }
 
 func (t *Telegram) Shutdown() {
-	t.listener.Close()
 	t.client.Stop()
 }
 
-func (t *Telegram) SendVideo(chatId int64, file *VideoLocalFile) (*client.Message, error) {
+func (t *Telegram) SendVideo(chatId int64, file *VideoLocalFile, uploadTimeout time.Duration) (*client.Message, error) {
 	if file.Path == "" {
 		return nil, fmt.Errorf("filePath is empty")
 	}
@@ -127,5 +126,55 @@ func (t *Telegram) SendVideo(chatId int64, file *VideoLocalFile) (*client.Messag
 		return nil, fmt.Errorf("failed to send video message: %w", err)
 	}
 
+	content, ok := msg.Content.(*client.MessageVideo)
+	if !ok {
+		return nil, fmt.Errorf("message content is not a video")
+	}
+
+	if err = t.waitForVideoUpload(context.TODO(), content.Video.Video.Id, uploadTimeout); err != nil {
+		return nil, fmt.Errorf("failed to upload video: %w", err)
+	}
+
 	return msg, nil
+}
+
+func (t *Telegram) waitForVideoUpload(ctx context.Context, fileId int32, uploadTimeout time.Duration) error {
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, uploadTimeout)
+	defer cancel()
+
+	result := make(chan error, 1)
+
+	go func() {
+		defer close(result)
+
+		listener := t.client.GetListener()
+		defer listener.Close()
+
+		for update := range listener.Updates {
+			select {
+			case <-ctxWithTimeout.Done(): // тайм-аут
+				result <- ctxWithTimeout.Err()
+				return
+			default:
+				switch upd := update.(type) {
+				case *client.UpdateFile:
+					if upd.File.Id == fileId {
+						if upd.File.Remote.UploadedSize == upd.File.Size {
+							result <- nil
+							return
+						}
+					}
+				}
+			}
+		}
+
+		result <- fmt.Errorf("no matching update received")
+	}()
+
+	select {
+	case err := <-result:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

@@ -7,8 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/SevereCloud/vksdk/v3/api"
+	"github.com/SevereCloud/vksdk/v3/object"
 	"gorm.io/gorm"
-	"strconv"
+	"os"
 	"sync"
 	"time"
 )
@@ -53,53 +54,36 @@ func (t *Uploader) Upload(chatId int64) {
 		return
 	}
 
-	var wg sync.WaitGroup
 	sem := make(chan struct{}, maxWorkers)
 
+	var wg sync.WaitGroup
+	wg.Add(len(posts))
+
 	for _, post := range posts {
-		wg.Add(1)
 		sem <- struct{}{}
 
 		go func() {
 			defer wg.Done()
 			defer t.db.Model(&database.Post{}).Where("id = ?", post.ID).Update("processed", true)
 
-			fmt.Printf("скачиваю видео %d...\n", post.ID)
+			fmt.Printf("скачиваю видео %d из VK...\n", post.ID)
 
-			file, err := t.download(post)
-			if err == nil {
-				file.Caption = post.Text
-
+			if file, err := t.download(post); err == nil {
 				fmt.Printf("загружаю видео %d в Telegram...\n", post.ID)
-				_, err = t.tg.SendVideo(chatId, file)
-			}
 
-			if err != nil {
-				fmt.Printf("ошибка загрузки видео %d: %v\n", post.ID, err)
-
-				<-sem
-				return
-			}
-
-			start := time.Now()
-
-			for {
-				if time.Since(start) > uploadTimeout {
-					fmt.Printf("тайм-аут для загрузки видео %d истек\n", post.ID)
-					break
+				if _, err = t.tg.SendVideo(chatId, file, uploadTimeout); err != nil {
+					fmt.Printf("ошибка загрузки видео %d в Telegram: %v\n", post.ID, err)
 				}
 
-				hasFile, err := lib.CheckFileInDirectory(DataVideoFolder, strconv.Itoa(post.ID))
-				if err != nil {
-					continue
-				}
+				go func() {
+					_ = os.Remove(file.Path)
 
-				if !hasFile {
-					fmt.Printf("нет видео %d в директории\n", post.ID)
-					break
-				}
-
-				time.Sleep(30 * time.Second)
+					if file.PreviewPath != "" {
+						_ = os.Remove(file.PreviewPath)
+					}
+				}()
+			} else {
+				fmt.Printf("ошибка скачивания видео %d из VK: %v\n", post.ID, err)
 			}
 
 			<-sem
@@ -111,7 +95,6 @@ func (t *Uploader) Upload(chatId int64) {
 
 func (t *Uploader) download(post database.Post) (*tdlib.VideoLocalFile, error) {
 	v, err := t.vk.VideoGet(api.Params{"videos": fmt.Sprintf("%d_%d", post.GroupID, post.VideoID)})
-
 	if err != nil {
 		return nil, err
 	}
@@ -121,36 +104,61 @@ func (t *Uploader) download(post database.Post) (*tdlib.VideoLocalFile, error) {
 	}
 
 	video := v.Items[0]
-	videoURL := video.Files.Mp4_720
-	if videoURL == "" {
-		videoURL = video.Files.Mp4_480
-		if videoURL == "" {
-			return nil, errors.New("video url not found")
-		}
-	}
 
-	filePath := fmt.Sprintf("%s/%d.mp4", DataVideoFolder, post.ID)
-	if err = lib.DownloadFile(videoURL, filePath); err != nil {
+	filePath, err := downloadVideo(post.ID, video.Files)
+	if err != nil {
 		return nil, err
 	}
 
-	previewPath := fmt.Sprintf("%s/%d.jpg", DataVideoFolder, post.ID)
-	previewURL := video.Image[0].URL
-	for i := len(video.Image) - 1; i > 0; i-- {
-		if img := video.Image[i]; img.Width <= maxWidth && img.Height <= maxHeight {
-			previewURL = img.URL
+	return &tdlib.VideoLocalFile{
+		Caption:     post.Text,
+		Path:        filePath,
+		PreviewPath: downloadImage(post.ID, video.Image),
+		Width:       maxWidth,
+		Height:      maxHeight,
+	}, nil
+}
+
+func downloadVideo(postId int, file object.VideoVideoFiles) (string, error) {
+	var err error
+
+	path := fmt.Sprintf("%s/%d.mp4", DataVideoFolder, postId)
+	for _, url := range [...]string{file.Mp4_720, file.Mp4_480} {
+		if url == "" {
+			err = errors.New("video url not found")
+
+			continue
+		}
+
+		if err = lib.DownloadFile(url, path); err == nil {
 			break
 		}
 	}
 
-	if err = lib.DownloadFile(previewURL, previewPath); err != nil {
-		previewPath = ""
+	if err != nil {
+		return "", err
 	}
 
-	return &tdlib.VideoLocalFile{
-		Path:        filePath,
-		PreviewPath: previewPath,
-		Width:       maxWidth,
-		Height:      maxHeight,
-	}, nil
+	return path, nil
+}
+
+func downloadImage(postId int, images []object.VideoVideoImage) string {
+	if len(images) == 0 {
+		return ""
+	}
+
+	path := fmt.Sprintf("%s/%d.jpg", DataVideoFolder, postId)
+	url := images[0].URL
+	for i := len(images) - 1; i > 0; i-- {
+		if img := images[i]; img.Width <= maxWidth && img.Height <= maxHeight {
+			url = img.URL
+			break
+		}
+	}
+
+	if err := lib.DownloadFile(url, path); err != nil {
+		return ""
+	}
+
+	return path
 }
