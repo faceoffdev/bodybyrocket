@@ -75,6 +75,8 @@ func (t *Uploader) Upload(chatId int64) {
 					fmt.Printf("ошибка загрузки видео %d в Telegram: %v\n", post.ID, err)
 				}
 
+				fmt.Printf("видео %d успешно загружено в Telegram\n", post.ID)
+
 				go func() {
 					_ = os.Remove(file.Path)
 
