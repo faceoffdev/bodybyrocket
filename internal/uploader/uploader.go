@@ -9,7 +9,6 @@ import (
 	"github.com/SevereCloud/vksdk/v3/api"
 	"github.com/SevereCloud/vksdk/v3/object"
 	"gorm.io/gorm"
-	"os"
 	"sync"
 	"time"
 )
@@ -71,19 +70,13 @@ func (t *Uploader) Upload(chatId int64) {
 			if file, err := t.download(post); err == nil {
 				fmt.Printf("загружаю видео %d в Telegram...\n", post.ID)
 
-				if _, err = t.tg.SendVideo(chatId, file, uploadTimeout); err != nil {
+				if err = t.tg.SendVideo(chatId, file, uploadTimeout); err != nil {
 					fmt.Printf("ошибка загрузки видео %d в Telegram: %v\n", post.ID, err)
+				} else {
+					fmt.Printf("видео %d успешно загружено в Telegram\n", post.ID)
 				}
 
-				fmt.Printf("видео %d успешно загружено в Telegram\n", post.ID)
-
-				go func() {
-					_ = os.Remove(file.Path)
-
-					if file.PreviewPath != "" {
-						_ = os.Remove(file.PreviewPath)
-					}
-				}()
+				lib.RemoveFiles(file.Path, file.PreviewPath)
 			} else {
 				fmt.Printf("ошибка скачивания видео %d из VK: %v\n", post.ID, err)
 			}

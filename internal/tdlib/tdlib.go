@@ -79,19 +79,19 @@ func (t *Telegram) Shutdown() {
 	t.client.Stop()
 }
 
-func (t *Telegram) SendVideo(chatId int64, file *VideoLocalFile, uploadTimeout time.Duration) (*client.Message, error) {
+func (t *Telegram) SendVideo(chatId int64, file *VideoLocalFile, uploadTimeout time.Duration) error {
 	if file.Path == "" {
-		return nil, fmt.Errorf("filePath is empty")
+		return fmt.Errorf("filePath is empty")
 	}
 	if chatId == 0 {
-		return nil, fmt.Errorf("chatId is empty")
+		return fmt.Errorf("chatId is empty")
 	}
 
 	chat, err := t.client.GetChat(&client.GetChatRequest{
 		ChatId: chatId,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get chat with id %d: %w", chatId, err)
+		return fmt.Errorf("failed to get chat with id %d: %w", chatId, err)
 	}
 
 	var formattedText *client.FormattedText
@@ -101,7 +101,7 @@ func (t *Telegram) SendVideo(chatId int64, file *VideoLocalFile, uploadTimeout t
 			ParseMode: &client.TextParseModeHTML{},
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse text entities: %w", err)
+			return fmt.Errorf("failed to parse text entities: %w", err)
 		}
 	}
 	var thumbnail *client.InputThumbnail
@@ -123,19 +123,27 @@ func (t *Telegram) SendVideo(chatId int64, file *VideoLocalFile, uploadTimeout t
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to send video message: %w", err)
+		return fmt.Errorf("failed to send video message: %w", err)
 	}
 
 	content, ok := msg.Content.(*client.MessageVideo)
 	if !ok {
-		return nil, fmt.Errorf("message content is not a video")
+		return fmt.Errorf("message content is not a video")
 	}
 
 	if err = t.waitForVideoUpload(context.TODO(), content.Video.Video.Id, uploadTimeout); err != nil {
-		return nil, fmt.Errorf("failed to upload video: %w", err)
+		return fmt.Errorf("failed to upload video: %w", err)
 	}
 
-	return msg, nil
+	// TODO найти событие об отправке сообщения
+	for {
+		time.Sleep(1 * time.Second)
+
+		msg, _ = t.client.GetMessage(&client.GetMessageRequest{ChatId: msg.ChatId, MessageId: msg.Id})
+		if msg == nil { // если пришел nil, значит сообщение отправлено
+			return nil
+		}
+	}
 }
 
 func (t *Telegram) waitForVideoUpload(ctx context.Context, fileId int32, uploadTimeout time.Duration) error {

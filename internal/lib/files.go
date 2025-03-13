@@ -19,6 +19,14 @@ func IsDirectory(path string) (bool, error) {
 	return fileInfo.IsDir(), err
 }
 
+func RemoveFiles(paths ...string) {
+	for _, path := range paths {
+		if path != "" {
+			_ = os.Remove(path)
+		}
+	}
+}
+
 func DownloadFile(url, filepath string) (err error) {
 	response, err := http.Get(url)
 	if err != nil {
