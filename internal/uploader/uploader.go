@@ -118,7 +118,7 @@ func downloadVideo(postId int, file object.VideoVideoFiles) (string, error) {
 	var err error
 
 	path := fmt.Sprintf("%s/%d.mp4", DataVideoFolder, postId)
-	for _, url := range [...]string{file.Mp4_720, file.Mp4_480} {
+	for _, url := range [...]string{file.Mp4_720, file.Mp4_480, file.Mp4_1080} {
 		if url == "" {
 			err = errors.New("video url not found")
 
