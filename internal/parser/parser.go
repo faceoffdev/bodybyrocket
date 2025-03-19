@@ -14,7 +14,7 @@ type Parser struct {
 	db *gorm.DB
 }
 
-func New(vk *api.VK, db *gorm.DB) *Parser {
+func NewParser(vk *api.VK, db *gorm.DB) *Parser {
 	return &Parser{vk, db}
 }
 

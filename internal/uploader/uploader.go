@@ -14,9 +14,8 @@ import (
 )
 
 const (
-	DataVideoFolder = ".data/videos"
-	maxWorkers      = 2
-	uploadTimeout   = 30 * time.Minute
+	maxWorkers    = 2
+	uploadTimeout = 30 * time.Minute
 )
 
 const (
@@ -25,19 +24,65 @@ const (
 )
 
 type Uploader struct {
-	vk *api.VK
-	tg *tdlib.Telegram
-	db *gorm.DB
+	vk         *api.VK
+	tg         *tdlib.Telegram
+	db         *gorm.DB
+	dataFolder string
 }
 
-func New(vk *api.VK, tg *tdlib.Telegram, db *gorm.DB) *Uploader {
-	return &Uploader{vk, tg, db}
+func NewUploader(vk *api.VK, tg *tdlib.Telegram, db *gorm.DB, dataFolder string) *Uploader {
+	return &Uploader{vk, tg, db, dataFolder}
 }
 
-func (t *Uploader) getPosts() []database.Post {
+func (u *Uploader) Upload(chatId int64) {
+	posts := u.getPosts()
+
+	if len(posts) == 0 {
+		return
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(len(posts))
+
+	sem := lib.NewSemaphore(maxWorkers)
+
+	for _, post := range posts {
+		postID := post.ID
+
+		sem.Acquire()
+		go func() {
+			defer func() {
+				wg.Done()
+				sem.Release()
+			}()
+
+			fmt.Printf("скачиваю видео %d из VK...\n", postID)
+
+			if file, err := u.download(post); err == nil {
+				fmt.Printf("загружаю видео %d в Telegram...\n", postID)
+
+				if err = u.tg.SendVideo(chatId, file, uploadTimeout); err != nil {
+					fmt.Printf("ошибка загрузки видео %d в Telegram: %v\n", postID, err)
+				} else {
+					fmt.Printf("видео %d успешно загружено в Telegram\n", postID)
+
+					u.db.Model(&database.Post{}).Where("id = ?", postID).Update("processed", true)
+				}
+
+				lib.RemoveFiles(file.Path, file.PreviewPath)
+			} else {
+				fmt.Printf("ошибка скачивания видео %d из VK: %v\n", postID, err)
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+func (u *Uploader) getPosts() []database.Post {
 	var posts []database.Post
 
-	t.db.Model(&database.Post{}).
+	u.db.Model(&database.Post{}).
 		Select("id", "group_id", "video_id", "text").
 		Where("processed = ?", false).
 		Order("published_at").
@@ -46,50 +91,8 @@ func (t *Uploader) getPosts() []database.Post {
 	return posts
 }
 
-func (t *Uploader) Upload(chatId int64) {
-	posts := t.getPosts()
-
-	if len(posts) == 0 {
-		return
-	}
-
-	sem := make(chan struct{}, maxWorkers)
-
-	var wg sync.WaitGroup
-	wg.Add(len(posts))
-
-	for _, post := range posts {
-		sem <- struct{}{}
-
-		go func() {
-			defer wg.Done()
-			defer t.db.Model(&database.Post{}).Where("id = ?", post.ID).Update("processed", true)
-
-			fmt.Printf("скачиваю видео %d из VK...\n", post.ID)
-
-			if file, err := t.download(post); err == nil {
-				fmt.Printf("загружаю видео %d в Telegram...\n", post.ID)
-
-				if err = t.tg.SendVideo(chatId, file, uploadTimeout); err != nil {
-					fmt.Printf("ошибка загрузки видео %d в Telegram: %v\n", post.ID, err)
-				} else {
-					fmt.Printf("видео %d успешно загружено в Telegram\n", post.ID)
-				}
-
-				lib.RemoveFiles(file.Path, file.PreviewPath)
-			} else {
-				fmt.Printf("ошибка скачивания видео %d из VK: %v\n", post.ID, err)
-			}
-
-			<-sem
-		}()
-	}
-
-	wg.Wait()
-}
-
-func (t *Uploader) download(post database.Post) (*tdlib.VideoLocalFile, error) {
-	v, err := t.vk.VideoGet(api.Params{"videos": fmt.Sprintf("%d_%d", post.GroupID, post.VideoID)})
+func (u *Uploader) download(post database.Post) (*tdlib.VideoLocalFile, error) {
+	v, err := u.vk.VideoGet(api.Params{"videos": fmt.Sprintf("%d_%d", post.GroupID, post.VideoID)})
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +103,7 @@ func (t *Uploader) download(post database.Post) (*tdlib.VideoLocalFile, error) {
 
 	video := v.Items[0]
 
-	filePath, err := downloadVideo(post.ID, video.Files)
+	filePath, err := u.downloadVideo(post.ID, video.Files)
 	if err != nil {
 		return nil, err
 	}
@@ -108,16 +111,16 @@ func (t *Uploader) download(post database.Post) (*tdlib.VideoLocalFile, error) {
 	return &tdlib.VideoLocalFile{
 		Caption:     post.Text,
 		Path:        filePath,
-		PreviewPath: downloadImage(post.ID, video.Image),
+		PreviewPath: u.downloadImage(post.ID, video.Image),
 		Width:       maxWidth,
 		Height:      maxHeight,
 	}, nil
 }
 
-func downloadVideo(postId int, file object.VideoVideoFiles) (string, error) {
+func (u *Uploader) downloadVideo(postId int, file object.VideoVideoFiles) (string, error) {
 	var err error
 
-	path := fmt.Sprintf("%s/%d.mp4", DataVideoFolder, postId)
+	path := fmt.Sprintf("%s/%d.mp4", u.dataFolder, postId)
 	for _, url := range [...]string{file.Mp4_720, file.Mp4_480, file.Mp4_1080} {
 		if url == "" {
 			err = errors.New("video url not found")
@@ -137,12 +140,12 @@ func downloadVideo(postId int, file object.VideoVideoFiles) (string, error) {
 	return path, nil
 }
 
-func downloadImage(postId int, images []object.VideoVideoImage) string {
+func (u *Uploader) downloadImage(postId int, images []object.VideoVideoImage) string {
 	if len(images) == 0 {
 		return ""
 	}
 
-	path := fmt.Sprintf("%s/%d.jpg", DataVideoFolder, postId)
+	path := fmt.Sprintf("%s/%d.jpg", u.dataFolder, postId)
 	url := images[0].URL
 	for i := len(images) - 1; i > 0; i-- {
 		if img := images[i]; img.Width <= maxWidth && img.Height <= maxHeight {

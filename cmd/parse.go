@@ -24,7 +24,7 @@ func init() {
 }
 
 func ParseHandler(_ *cobra.Command, _ []string) error {
-	cfg, err := config.New(".env")
+	cfg, err := config.NewConfig(".env")
 	if err != nil {
 		return fmt.Errorf("ошибка создания конфигурации: %v", err)
 	}
@@ -35,7 +35,7 @@ func ParseHandler(_ *cobra.Command, _ []string) error {
 	}
 	defer database.Close(db)
 
-	p := parser.New(api.NewVK(string(cfg.Vk.Token)), db)
+	p := parser.NewParser(api.NewVK(string(cfg.Vk.Token)), db)
 
 	var wg sync.WaitGroup
 	wg.Add(2)

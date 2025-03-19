@@ -2,7 +2,7 @@ package tdlib
 
 import (
 	"bodybyrocket/internal/config"
-	"context"
+	"errors"
 	"fmt"
 	"github.com/zelenin/go-tdlib/client"
 	"log"
@@ -20,20 +20,20 @@ type Telegram struct {
 	client *client.Client
 }
 
-func New(cfg config.Telegram) (*Telegram, error) {
-	tdlibClient, err := newTelegramClient(cfg)
+func NewTelegram(cfg config.Telegram, dataFolder string) (*Telegram, error) {
+	tdlibClient, err := newClient(cfg, dataFolder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tdlib client: %w", err)
 	}
 
-	u := &Telegram{
+	t := &Telegram{
 		client: tdlibClient,
 	}
 
-	return u, nil
+	return t, nil
 }
 
-func newTelegramClient(cfg config.Telegram) (*client.Client, error) {
+func newClient(cfg config.Telegram, dataFolder string) (*client.Client, error) {
 	apiId64, err := strconv.ParseInt(cfg.ApiId, 10, 32)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse ApiId from config: %w", err)
@@ -42,7 +42,7 @@ func newTelegramClient(cfg config.Telegram) (*client.Client, error) {
 	authorizer := client.BotAuthorizer(cfg.BotToken)
 
 	authorizer.TdlibParameters <- &client.SetTdlibParametersRequest{
-		DatabaseDirectory:  filepath.Join(".data", "tdlib", "database"),
+		DatabaseDirectory:  filepath.Join(dataFolder, "database"),
 		ApiId:              int32(apiId64),
 		ApiHash:            cfg.ApiHash,
 		SystemLanguageCode: "ru",
@@ -67,12 +67,12 @@ func newTelegramClient(cfg config.Telegram) (*client.Client, error) {
 		log.Printf("TDLib version could not be retrieved properly")
 	}
 
-	newClient, err := client.NewClient(authorizer)
+	c, err := client.NewClient(authorizer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new tdlib client: %w", err)
 	}
 
-	return newClient, nil
+	return c, nil
 }
 
 func (t *Telegram) Shutdown() {
@@ -111,7 +111,7 @@ func (t *Telegram) SendVideo(chatId int64, file *VideoLocalFile, uploadTimeout t
 		}
 	}
 
-	msg, err := t.client.SendMessage(&client.SendMessageRequest{
+	err = t.SendMessageWithTimeout(&client.SendMessageRequest{
 		ChatId: chat.Id,
 		InputMessageContent: &client.InputMessageVideo{
 			Video:             &client.InputFileLocal{Path: file.Path},
@@ -121,68 +121,35 @@ func (t *Telegram) SendVideo(chatId int64, file *VideoLocalFile, uploadTimeout t
 			Caption:           formattedText,
 			SupportsStreaming: true,
 		},
-	})
+	}, uploadTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to send video message: %w", err)
 	}
 
-	content, ok := msg.Content.(*client.MessageVideo)
-	if !ok {
-		return fmt.Errorf("message content is not a video")
-	}
-
-	if err = t.waitForVideoUpload(context.TODO(), content.Video.Video.Id, uploadTimeout); err != nil {
-		return fmt.Errorf("failed to upload video: %w", err)
-	}
-
-	// TODO найти событие об отправке сообщения
-	for {
-		time.Sleep(1 * time.Second)
-
-		msg, _ = t.client.GetMessage(&client.GetMessageRequest{ChatId: msg.ChatId, MessageId: msg.Id})
-		if msg == nil { // если пришел nil, значит сообщение отправлено
-			return nil
-		}
-	}
+	return nil
 }
 
-func (t *Telegram) waitForVideoUpload(ctx context.Context, fileId int32, uploadTimeout time.Duration) error {
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, uploadTimeout)
-	defer cancel()
+func (t *Telegram) SendMessageWithTimeout(req *client.SendMessageRequest, d time.Duration) error {
+	listener := t.client.GetListener()
+	defer listener.Close()
 
-	result := make(chan error, 1)
+	msg, err := t.client.SendMessage(req)
+	if err != nil {
+		return err
+	}
 
-	go func() {
-		defer close(result)
-
-		listener := t.client.GetListener()
-		defer listener.Close()
-
-		for update := range listener.Updates {
-			select {
-			case <-ctxWithTimeout.Done(): // тайм-аут
-				result <- ctxWithTimeout.Err()
-				return
-			default:
-				switch upd := update.(type) {
-				case *client.UpdateFile:
-					if upd.File.Id == fileId {
-						if upd.File.Remote.UploadedSize == upd.File.Size {
-							result <- nil
-							return
-						}
-					}
+	timeout := time.After(d)
+	for {
+		select {
+		case <-timeout:
+			return errors.New("timeout")
+		case update := <-listener.Updates:
+			switch upd := update.(type) {
+			case *client.UpdateMessageSendSucceeded:
+				if upd.OldMessageId == msg.Id {
+					return nil
 				}
 			}
 		}
-
-		result <- fmt.Errorf("no matching update received")
-	}()
-
-	select {
-	case err := <-result:
-		return err
-	case <-ctx.Done():
-		return ctx.Err()
 	}
 }

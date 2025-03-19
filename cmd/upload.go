@@ -12,8 +12,6 @@ import (
 	"os"
 )
 
-const chatId = -1002298937261
-
 func init() {
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "upload",
@@ -23,9 +21,15 @@ func init() {
 }
 
 func UploadHandler(_ *cobra.Command, _ []string) error {
-	cfg, err := config.New(".env")
+	cfg, err := config.NewConfig(".env")
 	if err != nil {
 		return fmt.Errorf("ошибка создания конфигурации: %v", err)
+	}
+
+	for _, f := range [...]string{cfg.DataFolder.Base, cfg.DataFolder.Tdlib, cfg.DataFolder.Videos} {
+		if ok, err := lib.IsDirectory(f); !ok || err != nil {
+			os.Mkdir(f, os.ModePerm)
+		}
 	}
 
 	db, err := database.Connect(cfg.Database)
@@ -34,20 +38,14 @@ func UploadHandler(_ *cobra.Command, _ []string) error {
 	}
 	defer database.Close(db)
 
-	tg, err := tdlib.New(cfg.Telegram)
+	tg, err := tdlib.NewTelegram(cfg.Telegram, cfg.DataFolder.Tdlib)
 	if err != nil {
 		return fmt.Errorf("ошибка подключения к Telegram: %v", err)
 	}
 	defer tg.Shutdown()
 
-	for _, f := range []string{".data", ".data/tdlib", uploader.DataVideoFolder} {
-		if ok, err := lib.IsDirectory(f); !ok || err != nil {
-			os.Mkdir(f, os.ModePerm)
-		}
-	}
-
-	u := uploader.New(api.NewVK(string(cfg.Vk.Token)), tg, db)
-	u.Upload(chatId)
+	u := uploader.NewUploader(api.NewVK(string(cfg.Vk.Token)), tg, db, cfg.DataFolder.Videos)
+	u.Upload(cfg.Telegram.ChannelId)
 
 	return nil
 }
