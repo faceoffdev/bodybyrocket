@@ -103,24 +103,26 @@ func (u *Uploader) download(post database.Post) (*tdlib.VideoLocalFile, error) {
 
 	video := v.Items[0]
 
-	filePath, err := u.downloadVideo(post.ID, video.Files)
-	if err != nil {
+	filePath := fmt.Sprintf("%s/%d.mp4", u.dataFolder, post.ID)
+	if err = downloadVideo(filePath, video.Files); err != nil {
+		return nil, err
+	}
+
+	previewPath := fmt.Sprintf("%s/%d.jpg", u.dataFolder, post.ID)
+	if err = downloadImage(previewPath, video.Image); err != nil {
 		return nil, err
 	}
 
 	return &tdlib.VideoLocalFile{
 		Caption:     post.Text,
 		Path:        filePath,
-		PreviewPath: u.downloadImage(post.ID, video.Image),
+		PreviewPath: previewPath,
 		Width:       maxWidth,
 		Height:      maxHeight,
 	}, nil
 }
 
-func (u *Uploader) downloadVideo(postId int, file object.VideoVideoFiles) (string, error) {
-	var err error
-
-	path := fmt.Sprintf("%s/%d.mp4", u.dataFolder, postId)
+func downloadVideo(path string, file object.VideoVideoFiles) (err error) {
 	for _, url := range [...]string{file.Mp4_720, file.Mp4_480, file.Mp4_1080} {
 		if url == "" {
 			err = errors.New("video url not found")
@@ -133,19 +135,14 @@ func (u *Uploader) downloadVideo(postId int, file object.VideoVideoFiles) (strin
 		}
 	}
 
-	if err != nil {
-		return "", err
-	}
-
-	return path, nil
+	return
 }
 
-func (u *Uploader) downloadImage(postId int, images []object.VideoVideoImage) string {
+func downloadImage(path string, images []object.VideoVideoImage) error {
 	if len(images) == 0 {
-		return ""
+		return errors.New("no images found")
 	}
 
-	path := fmt.Sprintf("%s/%d.jpg", u.dataFolder, postId)
 	url := images[0].URL
 	for i := len(images) - 1; i > 0; i-- {
 		if img := images[i]; img.Width <= maxWidth && img.Height <= maxHeight {
@@ -154,9 +151,5 @@ func (u *Uploader) downloadImage(postId int, images []object.VideoVideoImage) st
 		}
 	}
 
-	if err := lib.DownloadFile(url, path); err != nil {
-		return ""
-	}
-
-	return path
+	return lib.DownloadFile(url, path)
 }
